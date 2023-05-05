@@ -1,0 +1,6 @@
+a) git pull permet de recupérer et de fusionner un depôt distant a la branche principale tandisque git fetch recupere les modifications du referentiels distant sans les fusionner automatiquement a la branche locale.
+b)Pour annuler les modifications locates non validées dans Git on utilise
+git reset 
+c)Pour supprimer une branche distante dans git, on utilise la commande : 
+git push origin --delete <nom_branche>
+d)Pour voir l'historique des modification pour un fichier specifique dans git, on utilise la commande : git log --<chemin_vers_fichier>
