@@ -1,0 +1,265 @@
+import requests
+import subprocess
+from urllib.parse import urlparse
+import socket
+from bs4 import BeautifulSoup
+from colorama import Fore, Style
+
+
+# Fonction pour vérifier si l'URL existe
+def check_url_existence(url):
+    try:
+        response = requests.head(url, allow_redirects=True)
+        response.raise_for_status()  # Lève une exception pour les codes d'erreur HTTP
+        return True
+    except requests.exceptions.RequestException:
+        return False
+
+# Fonction pour obtenir le nom de domaine à partir de l'URL
+def extract_domain(url):
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc
+    return domain
+
+# Fonction pour obtenir l'adresse IP du nom de domaine en utilisant un ping
+def get_ip_address(domain):
+    try:
+        process = subprocess.Popen(['ping', '-c', '1', domain], stdout=subprocess.PIPE)
+        output = process.communicate()[0]
+        print("\n[+] L'adresse IP de l'URL entrée :")
+        print(output.decode())
+        ip_address = output.decode().split('\n')[0].split()[-1].strip('()')
+        return ip_address
+    except Exception as e:
+        return "Impossible de récupérer l'adresse IP pour {}. Erreur : {}".format(domain, str(e))
+
+
+# Fonction pour détecter une vulnérabilité de serveur Apache
+def detect_apache_vulnerability(url):
+    response = requests.get(url)
+    headers = response.headers
+    if "Server" in headers:
+        server_header = headers["Server"]
+        if "Apache" in server_header:
+            version = server_header.split("/")[-1].strip()
+            if version >= "2.4.41":
+                return "\n[+] Serveur Apache {} exécute la version {}. Il est à jour.".format(url, version)
+            else:
+                return "\n[+] Serveur Apache {} vulnérable à la version {}. Mettez à jour votre serveur.".format(url, version)
+    return "\n[-] Apache n'a pas été détecté sur le serveur."
+
+    
+# Fonction pour détecter une vulnérabilité de serveur Nginx
+def detect_nginx_vulnerability(url):
+    response = requests.get(url)
+    headers = response.headers
+    if "Server" in headers:
+        server_header = headers["Server"]
+        if "nginx" in server_header:
+            version = server_header.split("/")[-1].strip()
+            if version >= "1.18.0":
+                return "\n[+] Serveur Nginx {} exécute la version {}. Il est à jour.".format(url, version)
+            else:
+                return "\n[+] Serveur Nginx {} vulnérable à la version {}. Mettez à jour votre serveur.".format(url, version)
+    return "\n[-] Nginx n'a pas été détecté sur le serveur."
+
+    
+# Fonction pour détecter l'utilisation de Bootstrap
+def detect_bootstrap_usage(url):
+    response = requests.get(url)
+    if "bootstrap.min.css" in response.text.lower() or "bootstrap.min.js" in response.text.lower():
+        return "\n[+] Bootstrap détecté sur le site {}".format(url)
+    return "\n[-] Bootstrap n'a pas été détecté sur le serveur."
+
+# Fonction pour détecter une vulnérabilité de serveur Microsoft IIS
+def detect_iis_vulnerability(url):
+    response = requests.get(url)
+    headers = response.headers
+    if "Server" in headers:
+        server_header = headers["Server"]
+        if "Microsoft-IIS" in server_header:
+            version = server_header.split("/")[-1].strip()
+            if version >= "10.0":
+                return "\n[+] Serveur Microsoft IIS {} exécute la version {}. Il est à jour.".format(url, version)
+            else:
+                return "\n[+] Serveur Microsoft IIS {} vulnérable à la version {}. Mettez à jour votre serveur.".format(url, version)
+    return "\n[-] Microsoft IIS n'a pas été détecté sur le serveur."
+
+
+# Fonction pour détecter la protection contre les attaques de type Clickjacking
+def detect_clickjacking_protection(url):
+    response = requests.get(url)
+    headers = response.headers
+    x_frame_options = headers.get('X-Frame-Options')
+    content_security_policy = headers.get('Content-Security-Policy')
+    
+    if x_frame_options and content_security_policy:
+        return "\n[+] Le site utilise à la fois X-Frame-Options et Content-Security-Policy. \n   Il est protégé contre les attaques de type Clickjacking sur {}".format(url)
+    elif x_frame_options:
+        return "\n[+] Le site utilise X-Frame-Options. Il est protégé contre les\n    attaques de type Clickjacking sur {}".format(url)
+    elif content_security_policy:
+        return "\n[+] Le site utilise Content-Security-Policy. Il est protégé contre\n    les attaques de type Clickjacking sur {}".format(url)
+    else:
+        return "\n[+] Absence des en-têtes X-Frame-Options et Content-Security-Policy!!!\n    Le site {} est vulnérable aux attaques de type Clickjacking.".format(url)
+
+# Fonction pour vérifier la validité du certificat SSL/TLS
+def check_ssl_certificate(url):
+    if url.startswith("https://"):
+        return True
+    else:
+        return False
+
+# Fonction pour détecter les ports ouverts, fermés et filtrés
+def detect_open_ports(domain):
+    open_ports = []
+    closed_ports = []
+    filtered_ports = []
+
+    # Les 10 premiers ports parmi les 1000
+    top_ports = [21, 22, 23, 25, 53, 80, 110, 139, 443, 445]
+
+    for port in top_ports:
+        try:
+            # Crée un objet de socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # Configure le timeout pour éviter les blocages prolongés
+            s.settimeout(1)
+            # Tente de se connecter au port
+            result = s.connect_ex((domain, port))
+
+            # 0 signifie que le port est ouvert
+            if result == 0:
+                open_ports.append(port)
+                # Essaye de déterminer le service en cours d'exécution sur le port
+                try:
+                    service = socket.getservbyport(port)
+                    open_ports[-1] = "{} ({})".format(port, service)
+                except (socket.error, OSError):
+                    pass
+            else:
+                # Autres codes d'erreur signifient que le port est fermé ou filtré
+                if result == 111:  # Connexion refusée (port fermé)
+                    closed_ports.append(port)
+                else:  # Autres erreurs (port filtré)
+                    filtered_ports.append(port)
+        except socket.error:
+            pass
+        finally:
+            # Ferme la connexion
+            s.close()
+
+    return open_ports, closed_ports, filtered_ports
+    
+
+
+def detect_sql_injection_vulnerability(url):
+    try:
+        # Injection SQL de test
+        payload = "' OR '1'='1' -- "
+
+        # Ajout du payload à l'URL et envoi de la requête
+        response = requests.get(f"{url}?id={payload}")
+
+        # Vérification de la présence d'erreurs SQL dans la réponse
+        if "error" in response.text.lower():
+            return True
+
+        return False
+    except Exception as e:
+        print("Erreur lors de la détection des injections SQL :", str(e))
+        return False
+    
+    
+
+###########Fonction principale pour l'analyse des vulnérabilités###############
+def analyze_web_vulnerabilities(url):
+
+    # Vérifie si l'URL existe avant de procéder
+    if not check_url_existence(url):
+        return ["\n[-]Oups!!!L'URL que vous avez entrée n'existe pas."]
+        
+    domain = extract_domain(url)
+    ip_address = get_ip_address(domain)
+    
+    vulnerabilities = []
+    apache_vuln_result = detect_apache_vulnerability(url)
+    if apache_vuln_result:
+        vulnerabilities.append(apache_vuln_result)
+    nginx_vuln_result = detect_nginx_vulnerability(url)
+    if nginx_vuln_result:
+        vulnerabilities.append(nginx_vuln_result)
+    iis_vuln_result = detect_iis_vulnerability(url)
+    if iis_vuln_result:
+        vulnerabilities.append(iis_vuln_result)
+    bootstrap_result = detect_bootstrap_usage(url)
+    if bootstrap_result:
+        vulnerabilities.append(bootstrap_result)
+    # Ajoutez ici d'autres tests de vulnérabilités si nécessaire
+    clickjacking_result = detect_clickjacking_protection(url)
+    vulnerabilities.append(clickjacking_result)
+    #Certificat ssl
+    ssl_protected = check_ssl_certificate(url)
+    if ssl_protected:
+        vulnerabilities.append("\n[+] Le site utilise un certificat SSL/TLS valide.")
+    else:
+        vulnerabilities.append("\n[+] Le site n'utilise pas de certificat SSL/TLS valide.")
+    
+    # Appel de la fonction et affichage des résultats
+    open_ports, closed_ports, filtered_ports = detect_open_ports(domain)
+    print("\n[+] Ports ouverts : {}".format(open_ports))
+    print("[+] Ports fermés : {}".format(closed_ports))
+    print("[+] Ports filtrés : {}".format(filtered_ports))
+    
+    # Utilisation de la fonction dans votre script
+    sql_injection_vulnerable = detect_sql_injection_vulnerability(url)
+
+    if sql_injection_vulnerable:
+      print(f"\n{Fore.BLUE}[+] {Style.RESET_ALL} Le site est potentiellement vulnérable aux injections SQL.")
+    else:
+      print(f"\n{Fore.BLUE}[-] {Style.RESET_ALL} Aucune vulnérabilité SQL détectée.")
+    
+    
+    if not vulnerabilities:
+        vulnerabilities.append("Aucune vulnérabilité détectée sur {}".format(url))
+    
+    return vulnerabilities
+
+# URL du site Web à analyser
+url = input("\nCONNECT_GET_URL: ")
+
+from termcolor import colored
+from pyfiglet import Figlet
+
+text = "RAINCOAT FOREVER"
+formatted_text = ""
+
+for word in text.split():
+    f = Figlet(font='big')
+    formatted_text += colored(f.renderText(word), 'yellow', attrs=['bold']) + ' '
+
+print(f"{Fore.YELLOW}\n{'*' * 52}{Style.RESET_ALL}\n{formatted_text.strip()}\n{Fore.YELLOW}{'*' * 52}{Style.RESET_ALL}")
+
+from colorama import Fore, Style
+
+text = "OUTIL DEVELOPPE POUR DES FINS LEGALES. LA RESPONSABILITE DE SON UTILISATION INAPPROPRIÉE VOUS INCOMBE ENTIÈREMENT...by Romaric AGONHOU"
+formatted_text = ""
+
+for i, word in enumerate(text.split()):
+    if word == "UTILISATION" and i > 0:
+        formatted_text += f"\n{Fore.YELLOW}{Style.BRIGHT}{word} "
+    else:
+        formatted_text += f"{Fore.YELLOW}{Style.BRIGHT}{word} "
+
+formatted_text = formatted_text.strip() + f"{Style.RESET_ALL}"
+
+print(f"\n{Fore.YELLOW}\n{formatted_text}\n{Style.RESET_ALL}")
+
+
+print(f"\n{Fore.GREEN}Analyzing vulnerabilities for {url}...{Style.RESET_ALL}")
+
+vulnerabilities = analyze_web_vulnerabilities(url)
+
+# Affiche les résultats
+for vulnerability in vulnerabilities:
+        print(vulnerability)
+
